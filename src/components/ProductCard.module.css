@@ -1,0 +1,108 @@
+.card {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  overflow: hidden;
+  transition: transform 0.2s, box-shadow 0.2s;
+  background: white;
+  display: flex;
+  flex-direction: column;
+}
+
+.card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+.imageArea {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  background: #f0f0f0;
+}
+
+.image {
+  object-fit: cover;
+}
+
+.content {
+  padding: 1.2rem;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 0.8rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  height: 2.8rem;
+}
+
+.priceInfo {
+  margin-top: auto;
+}
+
+.price {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: #d32323;
+}
+
+.priceUnit {
+  font-size: 0.9rem;
+  font-weight: normal;
+  color: #666;
+  margin-left: 0.2rem;
+}
+
+.meta {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.actionButtons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.actionButton {
+  flex: 1;
+  padding: 0.6rem;
+  background: #f0f0f0;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #555;
+  transition: all 0.2s;
+}
+
+.actionButton:hover {
+  background: #e0e0e0;
+  color: #333;
+}
+
+.linkButton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  background: #e6f2ff;
+  color: #007bff;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+
+.linkButton:hover {
+  background: #cce5ff;
+  color: #0056b3;
+}

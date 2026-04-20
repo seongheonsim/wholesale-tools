@@ -1,0 +1,101 @@
+.container {
+  max-width: 450px;
+  margin: 0 auto;
+  padding: 6rem 1.5rem;
+  font-family: 'Pretendard', sans-serif;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 2.5rem;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  border: 1px solid #eee;
+  text-align: center;
+}
+
+.title {
+  font-size: 1.8rem;
+  margin-bottom: 0.5rem;
+  color: #333;
+}
+
+.subtitle {
+  color: #666;
+  margin-bottom: 2.5rem;
+  font-size: 0.95rem;
+}
+
+.formGroup {
+  margin-bottom: 1.2rem;
+  text-align: left;
+}
+
+.label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #444;
+  font-size: 0.9rem;
+}
+
+.input {
+  width: 100%;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  outline: none;
+}
+
+.input:focus {
+  border-color: #007bff;
+}
+
+.button {
+  width: 100%;
+  padding: 1rem;
+  margin-top: 1rem;
+  font-size: 1.1rem;
+  font-weight: bold;
+  background: #333;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.button:hover {
+  background: #000;
+}
+
+.button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.error {
+  margin-top: 1rem;
+  padding: 0.8rem;
+  background: #fff5f5;
+  color: #c53030;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.homeLink {
+  display: inline-block;
+  margin-top: 2rem;
+  color: #888;
+  text-decoration: none;
+  font-size: 0.85rem;
+}
+
+.homeLink:hover {
+  text-decoration: underline;
+}
