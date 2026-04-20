@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Search, Download, X, Loader2, ChevronDown, ChevronUp, ExternalLink, Image as ImageIcon, User, Info, Truck, CreditCard, Store, Package, Tag, Undo2, ChevronRight, Layers, FileEdit } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Search, Download, X, Loader2, ChevronDown, ChevronUp, ExternalLink, Image as ImageIcon, User, Info, Truck, Store, Package, Tag, Undo2, ChevronRight, Layers, FileEdit, ZoomIn, Navigation, MousePointer2, CreditCard } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { DomeggookItem, DomeggookResponse, DomeggookItemDetail, DomeggookItemDetailResponse } from '@/types/domeggook';
 import DetailTemplate from '@/components/DetailTemplate';
@@ -16,7 +16,6 @@ import { cn } from '@/lib/utils';
 const formatNumber = (val: any) => {
   if (val === undefined || val === null || val === '') return '0';
   const str = String(val);
-  
   if (str.includes('|') || str.includes('+')) {
     try {
       const parts = str.split('|');
@@ -24,7 +23,6 @@ const formatNumber = (val: any) => {
         const pricePart = p.includes('+') ? p.split('+')[1] : p;
         return Number(pricePart.replace(/[^0-9.-]+/g, ""));
       }).filter(n => !isNaN(n));
-      
       if (prices.length > 0) {
         const min = Math.min(...prices);
         const max = Math.max(...prices);
@@ -34,12 +32,10 @@ const formatNumber = (val: any) => {
       return str;
     }
   }
-  
   const num = Number(str.replace(/[^0-9.-]+/g, ""));
   return isNaN(num) ? '0' : num.toLocaleString();
 };
 
-// 단위 정보 유무를 확인하여 포맷팅하는 유틸리티
 const formatWithUnit = (val: any, defaultUnit: string) => {
   if (!val) return '-';
   const str = String(val).trim();
@@ -47,7 +43,6 @@ const formatWithUnit = (val: any, defaultUnit: string) => {
   return hasUnit ? str : `${str}${defaultUnit}`;
 };
 
-// 이미지 유효성 검사 헬퍼 함수
 const validateImage = (url: string): Promise<boolean> => {
   return new Promise((resolve) => {
     const img = new Image();
@@ -57,10 +52,21 @@ const validateImage = (url: string): Promise<boolean> => {
   });
 };
 
-// 도매꾹 구간 가격 파싱 컴포넌트
+const extractImagesFromHtml = (html: string | undefined): string[] => {
+  if (!html) return [];
+  const div = document.createElement('div');
+  div.innerHTML = html;
+  const imgs = div.getElementsByTagName('img');
+  const urls: string[] = [];
+  for (let i = 0; i < imgs.length; i++) {
+    const src = imgs[i].getAttribute('src');
+    if (src) urls.push(src);
+  }
+  return [...new Set(urls)];
+};
+
 const PriceTierInfo = ({ priceStr }: { priceStr: string | undefined }) => {
   if (!priceStr) return null;
-  
   if (!priceStr.includes('|') && !priceStr.includes('+')) {
     return (
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -72,16 +78,11 @@ const PriceTierInfo = ({ priceStr }: { priceStr: string | undefined }) => {
       </div>
     );
   }
-
   try {
     const tiers = priceStr.split('|').map(t => {
       const [qty, price] = t.split('+');
-      return { 
-        qty: Number(qty.replace(/[^0-9]/g, "")), 
-        price: Number(price.replace(/[^0-9]/g, "")) 
-      };
+      return { qty: Number(qty.replace(/[^0-9]/g, "")), price: Number(price.replace(/[^0-9]/g, "")) };
     });
-
     return (
       <div className="grid grid-cols-1 gap-3">
         <div className="text-[11px] text-muted-foreground font-bold uppercase tracking-wider flex items-center gap-1.5 px-1">
@@ -118,9 +119,91 @@ const PriceTierInfo = ({ priceStr }: { priceStr: string | undefined }) => {
 const DetailRow = ({ label, value }: { label: string, value: any }) => (
   <div className="flex justify-between py-2 border-b border-slate-50 last:border-none">
     <span className="text-slate-500 text-sm font-medium">{label}</span>
-    <span className="text-slate-900 text-sm font-semibold">{value || '-'}</span>
+    <span className="text-slate-900 text-sm font-semibold text-right pl-4">{value || '-'}</span>
   </div>
 );
+
+// --- 인터랙티브 이미지 뷰어 컴포넌트 ---
+const InteractiveImageViewer = ({ url, onClose }: { url: string, onClose: () => void }) => {
+  const [scale, setScale] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.2 : 0.2;
+    setScale(prev => Math.min(Math.max(prev + delta, 0.5), 5));
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+  };
+
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isDragging) return;
+    setPosition({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  }, [isDragging, dragStart]);
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    } else {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, handleMouseMove]);
+
+  return (
+    <div className="fixed inset-0 z-[10000] bg-black/70 backdrop-blur-md flex items-center justify-center p-4 overlay-reset m-0 overflow-hidden select-none" 
+         onClick={onClose}
+         onWheel={handleWheel}>
+      {/* 고정 닫기 버튼 */}
+      <div className="fixed top-10 right-10 z-[10001]">
+        <Button variant="secondary" size="icon" className="h-16 w-16 rounded-full shadow-2xl bg-white/20 hover:bg-white/40 text-white border-none transition-all" onClick={onClose}>
+          <X size={40} strokeWidth={2.5} />
+        </Button>
+      </div>
+      
+      {/* 안내 가이드 */}
+      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[10001] bg-black/50 px-6 py-3 rounded-full text-white text-sm font-medium flex gap-6 backdrop-blur-md border border-white/10 pointer-events-none">
+        <span className="flex items-center gap-2"><MousePointer2 size={16} className="text-primary" /> 드래그하여 이동</span>
+        <span className="flex items-center gap-2"><ImageIcon size={16} className="text-primary" /> 휠로 확대/축소</span>
+      </div>
+
+      <div className="relative w-full h-full flex items-center justify-center cursor-grab active:cursor-grabbing" 
+           onMouseDown={handleMouseDown}
+           onClick={(e) => e.stopPropagation()}>
+        <img 
+          ref={imgRef}
+          src={url} 
+          alt="zoomed" 
+          className="max-w-none transition-transform duration-75 ease-out pointer-events-none shadow-2xl"
+          style={{ 
+            transform: `translate(${position.x}px, ${position.y}px) scale(${scale})`,
+            maxHeight: scale > 1 ? 'none' : '90vh',
+            maxWidth: scale > 1 ? 'none' : '90vw'
+          }} 
+        />
+      </div>
+    </div>
+  );
+};
 
 export default function Home() {
   const [keyword, setKeyword] = useState('');
@@ -131,7 +214,32 @@ export default function Home() {
   const [itemDetail, setItemDetail] = useState<DomeggookItemDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [validImages, setValidImages] = useState<Array<{url: string, label: string}>>([]);
+  const [descImages, setDescImages] = useState<string[]>([]);
   const [activeThumb, setActiveThumb] = useState<string | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [isNavOpen, setIsNavOpen] = useState(false);
+
+  // 팝업 스크롤 컨테이너를 직접 제어하기 위한 Ref
+  const popupScrollRef = useRef<HTMLDivElement>(null);
+  const sectionRefs = {
+    description: useRef<HTMLDivElement>(null),
+    images: useRef<HTMLDivElement>(null),
+    seller: useRef<HTMLDivElement>(null),
+  };
+
+  const scrollToTop = () => {
+    if (popupScrollRef.current) {
+      popupScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    setIsNavOpen(false);
+  };
+
+  const scrollToSection = (ref: React.RefObject<HTMLDivElement>) => {
+    if (ref.current) {
+      ref.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    setIsNavOpen(false);
+  };
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [mnp, setMnp] = useState('');
@@ -162,23 +270,15 @@ export default function Home() {
   const handleSearch = async (e?: React.FormEvent, pageNum: number = 1) => {
     if (e) e.preventDefault();
     if (!keyword.trim() && !isAdvancedOpen) return;
-
     setLoading(true);
     try {
       const response = await fetch(`/api/domeggook?${buildQueryString(pageNum)}`);
       const data: DomeggookResponse = await response.json();
-      
       if (data.domeggook?.list?.item) {
-        const itemList = Array.isArray(data.domeggook.list.item) 
-          ? data.domeggook.list.item 
-          : [data.domeggook.list.item];
+        const itemList = Array.isArray(data.domeggook.list.item) ? data.domeggook.list.item : [data.domeggook.list.item];
         setItems(itemList as DomeggookItem[]);
-        
-        if (data.domeggook.header?.numberOfPages) {
-          setTotalPages(parseInt(data.domeggook.header.numberOfPages, 10));
-        } else {
-          setTotalPages(1);
-        }
+        if (data.domeggook.header?.numberOfPages) setTotalPages(parseInt(data.domeggook.header.numberOfPages, 10));
+        else setTotalPages(1);
         setPage(pageNum);
       } else {
         setItems([]);
@@ -198,34 +298,25 @@ export default function Home() {
     setItemDetail(null);
     setActiveThumb(null);
     setValidImages([]);
-
+    setDescImages([]);
+    setIsNavOpen(false);
     try {
       const response = await fetch(`/api/domeggook/view?itemNo=${itemNo}`);
       const data: DomeggookItemDetailResponse = await response.json();
-      
       if (data.domeggook) {
         const detail = data.domeggook;
-        
         const candidates = [
           { url: detail.thumb?.original, label: '원본' },
           { url: detail.thumb?.large, label: '일반' },
           { url: detail.thumb?.largePng, label: 'PNG' },
           { url: detail.thumb?.small, label: '소형' },
         ].filter(t => t.url);
-
-        const results = await Promise.all(
-          candidates.map(async (img) => ({
-            ...img,
-            isValid: await validateImage(img.url)
-          }))
-        );
-
+        const results = await Promise.all(candidates.map(async (img) => ({ ...img, isValid: await validateImage(img.url) })));
         const filtered = results.filter(r => r.isValid).map(({url, label}) => ({url, label}));
-        
         setValidImages(filtered);
-        if (filtered.length > 0) {
-          setActiveThumb(filtered[0].url);
-        }
+        if (filtered.length > 0) setActiveThumb(filtered[0].url);
+        const extracted = extractImagesFromHtml(detail.desc?.contents?.item);
+        setDescImages(extracted);
         setItemDetail(detail);
       } else {
         alert('상세 정보를 찾을 수 없습니다.');
@@ -241,12 +332,8 @@ export default function Home() {
   const handleDownloadImage = async () => {
     const node = document.getElementById('detail-page-template');
     if (!node) return;
-
     try {
-      const dataUrl = await toPng(node, { 
-        cacheBust: true,
-        backgroundColor: '#ffffff',
-      });
+      const dataUrl = await toPng(node, { cacheBust: true, backgroundColor: '#ffffff' });
       const link = document.createElement('a');
       link.download = `detail_${selectedItem?.no || 'product'}.png`;
       link.href = dataUrl;
@@ -288,7 +375,7 @@ export default function Home() {
                 <option value="da">최근등록순</option>
               </select>
               <Button type="submit" disabled={loading} className="h-12 px-6 text-base">
-                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Search className="mr-2 h-4 w-4" />}
+                {loading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Search className="mr-2 h-5 w-5" />}
                 검색
               </Button>
               <Button 
@@ -349,7 +436,7 @@ export default function Home() {
         </CardContent>
       </Card>
 
-      <Card className="shadow-md">
+      <Card shadow-md="true">
         <CardHeader className="py-4">
           <CardTitle className="text-lg">검색 결과 {items.length > 0 && <span className="text-muted-foreground text-sm font-normal ml-2">(페이지 {page}/{totalPages})</span>}</CardTitle>
         </CardHeader>
@@ -430,300 +517,177 @@ export default function Home() {
 
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-4 p-4 border-t bg-white rounded-b-xl">
-              <Button 
-                variant="outline" 
-                disabled={page === 1}
-                onClick={() => handleSearch(undefined, page - 1)}
-              >
-                이전
-              </Button>
-              <span className="text-sm font-medium">
-                {page} / {totalPages}
-              </span>
-              <Button 
-                variant="outline"
-                disabled={page === totalPages}
-                onClick={() => handleSearch(undefined, page + 1)}
-              >
-                다음
-              </Button>
+              <Button variant="outline" disabled={page === 1} onClick={() => handleSearch(undefined, page - 1)}>이전</Button>
+              <span className="text-sm font-medium">{page} / {totalPages}</span>
+              <Button variant="outline" disabled={page === totalPages} onClick={() => handleSearch(undefined, page + 1)}>다음</Button>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Product Detail Info Popup - Fully Categorized */}
+      {/* Product Detail Info Popup */}
       {itemDetail && itemDetail.basis && (
         <div className="fixed z-[9999] bg-black/50 flex items-center justify-center p-4 md:p-10 backdrop-blur-[2px] overlay-reset overflow-hidden">
-          <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+          <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 relative">
+            
+            {/* Compressed Floating Navigation - Optimized Speed & UI */}
+            <div className="absolute right-6 bottom-[125px] z-20 flex flex-col items-end gap-3">
+              {isNavOpen && (
+                <div className="flex flex-col gap-2 mb-2 animate-in slide-in-from-bottom-2 fade-in duration-75">
+                  <Button variant="outline" className="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-5 h-12 flex items-center gap-2 border-primary/20 text-primary font-bold hover:bg-primary hover:text-white transition-all duration-75" onClick={scrollToTop}>
+                    <ImageIcon size={18} /> 기본/배송 정보
+                  </Button>
+                  <Button variant="outline" className="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-5 h-12 flex items-center gap-2 border-primary/20 text-primary font-bold hover:bg-primary hover:text-white transition-all duration-75" onClick={() => scrollToSection(sectionRefs.description)}>
+                    <FileEdit size={18} /> 상세 설명
+                  </Button>
+                  <Button variant="outline" className="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-5 h-12 flex items-center gap-2 border-primary/20 text-primary font-bold hover:bg-primary hover:text-white transition-all duration-75" onClick={() => scrollToSection(sectionRefs.images)}>
+                    <ImageIcon size={18} /> 이미지 목록
+                  </Button>
+                  <Button variant="outline" className="bg-white/90 backdrop-blur-md shadow-lg rounded-full px-5 h-12 flex items-center gap-2 border-primary/20 text-primary font-bold hover:bg-primary hover:text-white transition-all duration-75" onClick={() => scrollToSection(sectionRefs.seller)}>
+                    <User size={18} /> 판매자 정보
+                  </Button>
+                </div>
+              )}
+              <Button 
+                size="icon" 
+                className="h-16 w-16 rounded-full shadow-2xl bg-primary/80 backdrop-blur-sm text-primary-foreground hover:scale-105 active:scale-95 transition-all duration-75"
+                onClick={() => setIsNavOpen(!isNavOpen)}
+              >
+                {isNavOpen ? <X size={32} /> : <Navigation size={32} />}
+              </Button>
+            </div>
+
             <div className="flex items-center justify-between px-8 py-5 border-b bg-white sticky top-0 z-10">
               <div className="flex items-center gap-4">
-                <span className="shrink-0 text-xs font-bold text-primary px-3 py-1.5 bg-primary/10 rounded-full border border-primary/20">
-                  {itemDetail.basis.status}
-                </span>
+                <span className="shrink-0 text-xs font-bold text-primary px-3 py-1.5 bg-primary/10 rounded-full border border-primary/20">{itemDetail.basis.status}</span>
                 <div>
                   <h2 className="text-xl font-bold text-slate-900 line-clamp-1">{itemDetail.basis.title}</h2>
                   <p className="text-sm text-muted-foreground">상품번호: {itemDetail.basis.no} | 등록일: {itemDetail.basis.dateReg}</p>
                 </div>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setItemDetail(null)} className="rounded-full">
-                <X className="h-6 w-6" />
-              </Button>
+              <Button variant="ghost" size="icon" onClick={() => setItemDetail(null)} className="rounded-full"><X className="h-6 w-6" /></Button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-8 space-y-10 bg-slate-50/30">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Left Side: Main Image and Price Cards */}
+            <div className="flex-1 overflow-y-auto p-8 space-y-12 bg-slate-50/30 scroll-smooth" ref={popupScrollRef}>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
                 <div className="lg:col-span-1 space-y-6">
                   <div className="space-y-4">
                     <div className="aspect-square rounded-2xl overflow-hidden border bg-white shadow-sm flex items-center justify-center transition-all duration-300">
-                      {activeThumb ? (
-                        <img 
-                          src={activeThumb} 
-                          alt="main-thumb" 
-                          className="w-full h-full object-cover animate-in fade-in duration-500" 
-                        />
-                      ) : (
-                        <div className="flex flex-col items-center text-slate-300">
-                          <ImageIcon size={48} />
-                          <p className="text-xs mt-2">이미지 없음</p>
-                        </div>
-                      )}
+                      {activeThumb ? <img src={activeThumb} alt="main-thumb" className="w-full h-full object-cover animate-in fade-in duration-500" /> : <div className="flex flex-col items-center text-slate-300"><ImageIcon size={48} /><p className="text-xs mt-2">이미지 없음</p></div>}
                     </div>
-
-                    {/* Thumbnail List / Slider - ONLY PRE-VALIDATED IMAGES */}
                     {validImages.length > 1 && (
                       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                         {validImages.map((t, i) => (
-                          <button
-                            key={i}
-                            onClick={() => setActiveThumb(t.url)}
-                            className={cn(
-                              "relative w-16 h-16 shrink-0 rounded-lg overflow-hidden border-2 transition-all",
-                              activeThumb === t.url ? "border-primary shadow-md scale-105" : "border-transparent hover:border-slate-300"
-                            )}
-                          >
+                          <button key={i} onClick={() => setActiveThumb(t.url)} className={cn("relative w-16 h-16 shrink-0 rounded-lg overflow-hidden border-2 transition-all", activeThumb === t.url ? "border-primary shadow-md scale-105" : "border-transparent hover:border-slate-300")}>
                             <img src={t.url} alt={`thumb-${i}`} className="w-full h-full object-cover" />
-                            <div className="absolute inset-x-0 bottom-0 bg-black/40 text-[8px] text-white py-0.5 text-center font-bold">
-                              {t.label}
-                            </div>
+                            <div className="absolute inset-x-0 bottom-0 bg-black/40 text-[8px] text-white py-0.5 text-center font-bold">{t.label}</div>
                           </button>
                         ))}
                       </div>
                     )}
                   </div>
-                  
-                  <div className="space-y-4">
-                    <PriceTierInfo priceStr={itemDetail.price?.dome} />
-                    
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">최소수량</p>
-                        <p className="text-lg font-black text-slate-900">{itemDetail.qty?.domeMoq || 0}개</p>
-                      </div>
-                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                        <p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">도매단위</p>
-                        <p className="text-lg font-black text-slate-900">{itemDetail.qty?.domeUnit || 0}개</p>
-                      </div>
-                    </div>
-                  </div>
+                  <div className="space-y-4"><PriceTierInfo priceStr={itemDetail.price?.dome} /><div className="grid grid-cols-2 gap-4"><div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">최소수량</p><p className="text-lg font-black text-slate-900">{itemDetail.qty?.domeMoq || 0}개</p></div><div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm"><p className="text-[10px] text-muted-foreground uppercase font-bold mb-1">도매단위</p><p className="text-lg font-black text-slate-900">{itemDetail.qty?.domeUnit || 0}개</p></div></div></div>
                 </div>
-
-                {/* Right Side: Detailed Categorized Info */}
                 <div className="lg:col-span-2 space-y-8">
-                  {/* Category 1: 기본 및 판매방식 */}
                   <div className="space-y-4">
-                    <h4 className="flex items-center gap-2 font-bold text-slate-800">
-                      <Store className="h-5 w-5 text-blue-500" /> 기본 및 판매 방식
-                    </h4>
+                    <h4 className="flex items-center gap-2 font-bold text-slate-800"><Store className="h-5 w-5 text-blue-500" /> 기본 및 판매 방식</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1 bg-white p-5 rounded-2xl border shadow-sm">
-                      <DetailRow label="판매방식" value={itemDetail.basis.section} />
-                      <DetailRow label="과세여부" value={itemDetail.basis.tax} />
-                      <DetailRow label="성인용품" value={itemDetail.basis.adult === 'true' ? '예' : '아니오'} />
-                      <DetailRow label="가격협상" value={itemDetail.basis.nego === 'disable' ? '불가' : '가능'} />
-                      <DetailRow label="등록일" value={itemDetail.basis.dateReg} />
-                      <DetailRow label="현재고" value={`${formatNumber(itemDetail.qty?.inventory)}개`} />
+                      <DetailRow label="판매방식" value={itemDetail.basis.section} /><DetailRow label="과세여부" value={itemDetail.basis.tax} /><DetailRow label="성인용품" value={itemDetail.basis.adult === 'true' ? '예' : '아니오'} /><DetailRow label="가격협상" value={itemDetail.basis.nego === 'disable' ? '불가' : '가능'} /><DetailRow label="등록일" value={itemDetail.basis.dateReg} /><DetailRow label="현재고" value={`${formatNumber(itemDetail.qty?.inventory)}개`} />
                     </div>
                   </div>
-
-                  {/* Category 2: 배송 정보 */}
                   <div className="space-y-4">
-                    <h4 className="flex items-center gap-2 font-bold text-slate-800">
-                      <Truck className="h-5 w-5 text-green-500" /> 배송 정책
-                    </h4>
+                    <h4 className="flex items-center gap-2 font-bold text-slate-800"><Truck className="h-5 w-5 text-green-500" /> 배송 정책</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1 bg-white p-5 rounded-2xl border shadow-sm">
-                      <DetailRow label="배송방법" value={itemDetail.deli?.method} />
-                      <DetailRow label="결제방식" value={itemDetail.deli?.pay} />
-                      <DetailRow label="배송상태" value={itemDetail.deli?.wating} />
-                      <DetailRow label="평균발송일" value={`${itemDetail.deli?.sendAvg || 0}일`} />
-                      <DetailRow label="빠른배송" value={itemDetail.deli?.fastDeli === 'true' ? '지원' : '미지원'} />
-                      <DetailRow label="해외배송" value={itemDetail.deli?.fromOversea === 'true' ? '예' : '아니오'} />
-                      <DetailRow label="추가배송비(제주)" value={`${formatNumber(itemDetail.deli?.feeExtra?.jeju)}원`} />
-                      <DetailRow label="추가배송비(도서)" value={`${formatNumber(itemDetail.deli?.feeExtra?.islands)}원`} />
+                      <DetailRow label="배송방법" value={itemDetail.deli?.method} /><DetailRow label="결제방식" value={itemDetail.deli?.pay} /><DetailRow label="배송상태" value={itemDetail.deli?.wating} /><DetailRow label="평균발송일" value={`${itemDetail.deli?.sendAvg || 0}일`} /><DetailRow label="빠른배송" value={itemDetail.deli?.fastDeli === 'true' ? '지원' : '미지원'} /><DetailRow label="해외배송" value={itemDetail.deli?.fromOversea === 'true' ? '예' : '아니오'} /><DetailRow label="추가배송비(제주)" value={`${formatNumber(itemDetail.deli?.feeExtra?.jeju)}원`} /><DetailRow label="추가배송비(도서)" value={`${formatNumber(itemDetail.deli?.feeExtra?.islands)}원`} />
                     </div>
                   </div>
-
-                  {/* Category 3: 상품 규격 및 고시정보 */}
                   <div className="space-y-4">
-                    <h4 className="flex items-center gap-2 font-bold text-slate-800">
-                      <Package className="h-5 w-5 text-orange-500" /> 상품 규격 및 정보
-                    </h4>
+                    <h4 className="flex items-center gap-2 font-bold text-slate-800"><Package className="h-5 w-5 text-orange-500" /> 상품 규격 및 정보</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1 bg-white p-5 rounded-2xl border shadow-sm">
-                      <DetailRow label="제조사" value={itemDetail.detail?.manufacturer} />
-                      <DetailRow label="원산지" value={itemDetail.detail?.country} />
-                      <DetailRow label="모델명" value={itemDetail.detail?.model} />
-                      <DetailRow label="규격(Size)" value={formatWithUnit(itemDetail.detail?.size, 'cm')} />
-                      <DetailRow label="무게(Weight)" value={formatWithUnit(itemDetail.detail?.weight, 'kg')} />
-                      <DetailRow label="해외직구" value={itemDetail.detail?.oversea === 'true' ? '예' : '아니오'} />
-                    </div>
-                  </div>
-
-                  {/* Category 4: 카테고리 및 키워드 */}
-                  <div className="space-y-4">
-                    <h4 className="flex items-center gap-2 font-bold text-slate-800">
-                      <Tag className="h-5 w-5 text-purple-500" /> 카테고리 및 키워드
-                    </h4>
-                    <div className="bg-white p-5 rounded-2xl border shadow-sm space-y-4">
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-2">분류 경로</p>
-                        <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-                          {itemDetail.category?.parents?.elem?.map((c, i) => (
-                            <React.Fragment key={i}>
-                              <span className="text-slate-900">{c.name}</span>
-                              <span className="text-slate-300">/</span>
-                            </React.Fragment>
-                          ))}
-                          <span className="text-primary">{itemDetail.category?.current?.name}</span>
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-2">검색 키워드</p>
-                        <div className="flex flex-wrap gap-2">
-                          {itemDetail.basis.keywords?.kw?.map((k, i) => (
-                            <span key={i} className="px-3 py-1 bg-slate-100 text-slate-600 rounded-full text-xs font-medium">#{k}</span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Category 5: 판매자 정보 */}
-                  <div className="space-y-4">
-                    <h4 className="flex items-center gap-2 font-bold text-slate-800">
-                      <User className="h-5 w-5 text-teal-500" /> 판매자 및 기업 정보
-                    </h4>
-                    <div className="bg-white p-5 rounded-2xl border shadow-sm">
-                      <div className="flex items-center gap-4 mb-6 pb-4 border-b border-slate-50">
-                        <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold">
-                          {itemDetail.seller?.nick?.substring(0, 1) || 'S'}
-                        </div>
-                        <div>
-                          <p className="font-bold text-lg">{itemDetail.seller?.nick} <span className="text-slate-400 font-normal text-sm">({itemDetail.seller?.id})</span></p>
-                          <p className="text-xs text-muted-foreground">사업자구분: {itemDetail.seller?.type} | 만족도: {itemDetail.seller?.score?.avg}</p>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-1">
-                        <DetailRow label="상호명" value={itemDetail.seller?.company?.name} />
-                        <DetailRow label="대표자" value={itemDetail.seller?.company?.boss} />
-                        <DetailRow label="사업자번호" value={itemDetail.seller?.company?.cno} />
-                        <DetailRow label="전화번호" value={itemDetail.seller?.company?.phone} />
-                        <div className="md:col-span-2">
-                          <DetailRow label="사업장주소" value={itemDetail.seller?.company?.addr} />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Category 6: 반품/교환 정보 */}
-                  <div className="space-y-4">
-                    <h4 className="flex items-center gap-2 font-bold text-slate-800">
-                      <Undo2 className="h-5 w-5 text-red-500" /> 반품/교환 안내
-                    </h4>
-                    <div className="bg-white p-5 rounded-2xl border shadow-sm">
-                      <DetailRow label="반품배송비" value={`${formatNumber(itemDetail.return?.deliAmt)}원`} />
-                      <DetailRow label="반품연락처" value={itemDetail.return?.addr?.phone} />
-                      <DetailRow label="반품주소" value={`${itemDetail.return?.addr?.address1 || ''} ${itemDetail.return?.addr?.address2 || ''}`} />
+                      <DetailRow label="제조사" value={itemDetail.detail?.manufacturer} /><DetailRow label="원산지" value={itemDetail.detail?.country} /><DetailRow label="모델명" value={itemDetail.detail?.model} /><DetailRow label="규격(Size)" value={formatWithUnit(itemDetail.detail?.size, 'cm')} /><DetailRow label="무게(Weight)" value={formatWithUnit(itemDetail.detail?.weight, 'kg')} /><DetailRow label="해외직구" value={itemDetail.detail?.oversea === 'true' ? '예' : '아니오'} />
                     </div>
                   </div>
                 </div>
               </div>
+              <div className="space-y-6" ref={sectionRefs.description}>
+                <h4 className="flex items-center gap-2 font-bold text-xl text-slate-800 border-b pb-4"><FileEdit className="h-6 w-6 text-indigo-500" /> 상품 상세 설명</h4>
+                <div className="bg-white p-8 rounded-3xl border shadow-inner min-h-[300px] overflow-x-hidden">
+                  {itemDetail.desc?.contents?.item ? <div className="prose max-w-full domeggook-desc" dangerouslySetInnerHTML={{ __html: itemDetail.desc.contents.item }} /> : <div className="flex flex-col items-center justify-center py-20 text-slate-300"><Info size={48} strokeWidth={1} /><p className="mt-4 font-medium">등록된 상세 설명이 없습니다.</p></div>}
+                </div>
+              </div>
+              <div className="space-y-6" ref={sectionRefs.images}>
+                <h4 className="flex items-center gap-2 font-bold text-xl text-slate-800 border-b pb-4"><ImageIcon className="h-6 w-6 text-pink-500" /> 본문 추출 이미지 ({descImages.length}장)</h4>
+                <p className="text-sm text-muted-foreground -mt-2">본문에 포함된 이미지를 따로 모았습니다. 클릭하면 크게 볼 수 있습니다.</p>
+                {descImages.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                    {descImages.map((url, i) => (
+                      <div key={i} className="group relative aspect-square bg-white rounded-xl border border-slate-100 overflow-hidden cursor-zoom-in hover:shadow-lg transition-all duration-200" onClick={() => setZoomedImage(url)}>
+                        <img src={url} alt={`desc-img-${i}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-colors"><ZoomIn className="text-white opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all" /></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : <div className="py-10 text-center text-slate-400 bg-white rounded-2xl border border-dashed">상세 설명에서 이미지를 찾을 수 없습니다.</div>}
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch" ref={sectionRefs.seller}>
+                <div className="flex flex-col space-y-4 h-full">
+                  <h4 className="flex items-center gap-2 font-bold text-slate-800"><Tag className="h-5 w-5 text-purple-500" /> 카테고리 및 키워드</h4>
+                  <div className="bg-white p-6 rounded-2xl border shadow-sm flex-1 space-y-6">
+                    <div><p className="text-[10px] text-muted-foreground uppercase font-bold mb-3 tracking-widest">분류 경로</p><div className="flex flex-wrap items-center gap-x-2 gap-y-3 text-sm font-semibold">{itemDetail.category?.parents?.elem?.map((c, i) => (<React.Fragment key={i}><span className="text-slate-900 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">{c.name}</span><ChevronRight size={14} className="text-slate-300" /></React.Fragment>))}<span className="text-primary bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10">{itemDetail.category?.current?.name}</span></div></div>
+                    <div><p className="text-[10px] text-muted-foreground uppercase font-bold mb-3 tracking-widest">검색 키워드</p><div className="flex flex-wrap gap-2">{itemDetail.basis.keywords?.kw?.map((k, i) => (<span key={i} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-[11px] font-bold border border-slate-200/50 hover:bg-primary/10 hover:text-primary hover:border-primary/20 transition-all cursor-default">#{k}</span>))}</div></div>
+                  </div>
+                </div>
+                <div className="flex flex-col space-y-4 h-full mt-0 md:mt-0">
+                  <h4 className="flex items-center gap-2 font-bold text-slate-800"><User className="h-5 w-5 text-teal-500" /> 판매자 및 기업 정보</h4>
+                  <div className="bg-white p-6 rounded-2xl border shadow-sm flex-1 flex flex-col">
+                    <div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-50"><div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xl">{itemDetail.seller?.nick?.substring(0, 1) || 'S'}</div><div><p className="font-bold text-lg leading-tight">{itemDetail.seller?.nick} <span className="text-slate-400 font-normal text-xs ml-1">({itemDetail.seller?.id})</span></p><p className="text-[11px] text-muted-foreground mt-1">사업자구분: {itemDetail.seller?.type} | 만족도: {itemDetail.seller?.score?.avg}</p></div></div>
+                    <div className="space-y-1 flex-1"><DetailRow label="상호명" value={itemDetail.seller?.company?.name} /><DetailRow label="대표자" value={itemDetail.seller?.company?.boss} /><DetailRow label="사업자번호" value={itemDetail.seller?.company?.cno} /><DetailRow label="전화번호" value={itemDetail.seller?.company?.phone} /><DetailRow label="사업장주소" value={itemDetail.seller?.company?.addr} /></div>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-4 pb-16">
+                <h4 className="flex items-center gap-2 font-bold text-slate-800"><Undo2 className="h-5 w-5 text-red-500" /> 반품/교환 안내</h4>
+                <div className="bg-white p-6 rounded-2xl border shadow-sm">
+                  <DetailRow label="반품배송비" value={`${formatNumber(itemDetail.return?.deliAmt)}원`} /><DetailRow label="반품연락처" value={itemDetail.return?.addr?.phone} /><DetailRow label="반품주소" value={`${itemDetail.return?.addr?.address1 || ''} ${itemDetail.return?.addr?.address2 || ''}`} />
+                </div>
+              </div>
             </div>
-
-            <div className="p-6 bg-white border-t flex justify-end gap-3 sticky bottom-0 z-10">
+            <div className="p-6 bg-white border-t flex justify-end gap-3 sticky bottom-0 z-10 shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
               <Button variant="outline" onClick={() => setItemDetail(null)} className="h-12 px-6 text-base">닫기</Button>
-              <Button 
-                onClick={() => {
-                  const baseItem = items.find(i => i.no === String(itemDetail.basis?.no));
-                  if (baseItem) {
-                    setSelectedItem(baseItem);
-                    setItemDetail(null);
-                  }
-                }} 
-                className="h-12 px-8 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 text-base"
-              >
-                상세페이지 생성기로 이동
-              </Button>
+              <Button onClick={() => { const baseItem = items.find(i => i.no === String(itemDetail.basis?.no)); if (baseItem) { setSelectedItem(baseItem); setItemDetail(null); } }} className="h-12 px-8 bg-primary hover:bg-primary/90 text-primary-foreground font-bold shadow-lg shadow-primary/20 text-base">상세페이지 생성기로 이동</Button>
             </div>
           </div>
         </div>
       )}
+
+      {/* Interactive Image Viewer - Zoom & Pan Support */}
+      {zoomedImage && <InteractiveImageViewer url={zoomedImage} onClose={() => setZoomedImage(null)} />}
 
       {detailLoading && (
         <div className="fixed z-[10000] bg-black/20 flex items-center justify-center backdrop-blur-[2px] overlay-reset">
-          <div className="bg-white p-6 rounded-2xl shadow-xl flex flex-col items-center gap-4 border">
-            <Loader2 className="h-10 w-10 text-primary animate-spin" />
-            <p className="font-bold text-slate-700 text-lg">상품 정보를 분석하고 있습니다...</p>
+          <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4 border border-white/50">
+            <Loader2 className="h-12 w-12 text-primary animate-spin" /><p className="font-bold text-slate-800 text-xl tracking-tight">상품 정보를 분석하고 있습니다...</p>
           </div>
         </div>
       )}
 
-      {/* AI Detailed Page Generator Popup - Improved UI */}
       {selectedItem && (
         <div className="fixed z-[9999] bg-black/50 flex items-center justify-center p-4 md:p-10 backdrop-blur-[2px] overlay-reset overflow-hidden">
           <div className="bg-white w-full max-w-5xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between px-8 py-5 border-b bg-white sticky top-0 z-10">
-              <div className="flex items-center gap-4">
-                <div className="bg-blue-100 p-2 rounded-lg">
-                  <FileEdit className="h-6 w-6 text-blue-600" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-slate-900 line-clamp-1">AI 상세페이지 생성기</h2>
-                  <p className="text-sm text-muted-foreground">{selectedItem.title}</p>
-                </div>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setSelectedItem(null)} className="rounded-full">
-                <X className="h-6 w-6" />
-              </Button>
+              <div className="flex items-center gap-4"><div className="bg-blue-100 p-2 rounded-lg"><FileEdit className="h-6 w-6 text-blue-600" /></div><div><h2 className="text-xl font-bold text-slate-900 line-clamp-1">AI 상세페이지 생성기</h2><p className="text-sm text-muted-foreground">{selectedItem.title}</p></div></div>
+              <Button variant="ghost" size="icon" onClick={() => setSelectedItem(null)} className="rounded-full"><X className="h-6 w-6" /></Button>
             </div>
-            
             <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
               <div className="max-w-3xl mx-auto space-y-6">
-                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start gap-3">
-                  <Info className="h-5 w-5 text-blue-500 mt-0.5" />
-                  <p className="text-sm text-blue-700 leading-relaxed">
-                    선택한 상품의 원본 데이터를 바탕으로 AI가 최적화된 상세페이지 문구를 생성합니다. 
-                    아래 미리보기를 확인하고 통이미지로 다운로드하여 마켓에 바로 사용하세요.
-                  </p>
-                </div>
-
-                <div className="border shadow-2xl bg-white rounded-lg overflow-hidden transform scale-[0.95] origin-top transition-all">
-                  <DetailTemplate item={selectedItem} id="detail-page-template" />
-                </div>
+                <div className="bg-blue-50 border border-blue-100 p-4 rounded-xl flex items-start gap-3"><Info className="h-5 w-5 text-blue-500 mt-0.5" /><p className="text-sm text-blue-700 leading-relaxed">선택한 상품의 원본 데이터를 바탕으로 AI가 최적화된 상세페이지 문구를 생성합니다. 아래 미리보기를 확인하고 통이미지로 다운로드하여 마켓에 바로 사용하세요.</p></div>
+                <div className="border shadow-2xl bg-white rounded-lg overflow-hidden transform scale-[0.95] origin-top transition-all"><DetailTemplate item={selectedItem} id="detail-page-template" /></div>
               </div>
             </div>
-
-            <div className="p-6 bg-white border-t flex justify-end gap-3 sticky bottom-0 z-10">
+            <div className="p-6 bg-white border-t flex justify-end gap-3 sticky bottom-0 z-10 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
               <Button variant="outline" onClick={() => setSelectedItem(null)} className="h-12 px-6 text-base">취소</Button>
-              <Button 
-                onClick={handleDownloadImage} 
-                className="h-12 px-8 bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-200 text-base"
-              >
-                <Download className="mr-2 h-5 w-5" />
-                통이미지 다운로드
-              </Button>
-              <Button className="h-12 px-8 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 text-base">
-                마켓 일괄 등록 대기열 추가
-              </Button>
+              <Button onClick={handleDownloadImage} className="h-12 px-8 bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg shadow-green-200 text-base"><Download className="mr-2 h-5 w-5" />통이미지 다운로드</Button>
+              <Button className="h-12 px-8 bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-lg shadow-blue-200 text-base">마켓 일괄 등록 대기열 추가</Button>
             </div>
           </div>
         </div>
