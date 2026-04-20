@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Download, X, Loader2, ChevronDown, ChevronUp, ExternalLink, Image as ImageIcon, User, Info, Truck, Store, Package, Tag, Undo2, ChevronRight, Layers, FileEdit, ZoomIn, Navigation, MousePointer2 } from 'lucide-react';
+import { Search, Download, X, Loader2, ChevronDown, ChevronUp, ExternalLink, Image as ImageIcon, User, Info, Truck, Store, Package, Tag, Undo2, ChevronRight, Layers, FileEdit, ZoomIn, Navigation, MousePointer2, Sparkles, Wand2, CheckCircle2, LayoutTemplate, FileText, Check } from 'lucide-react';
 import { toPng } from 'html-to-image';
 import { DomeggookItem, DomeggookResponse, DomeggookItemDetail, DomeggookItemDetailResponse } from '@/types/domeggook';
 import DetailTemplate from '@/components/DetailTemplate';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
@@ -116,7 +116,7 @@ const DetailRow = ({ label, value }: { label: string, value: any }) => (
   </div>
 );
 
-// --- 고도화된 인터랙티브 이미지 뷰어 컴포넌트 ---
+// --- 인터랙티브 이미지 뷰어 컴포넌트 ---
 const InteractiveImageViewer = ({ url, onClose }: { url: string, onClose: () => void }) => {
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -193,6 +193,12 @@ export default function Home() {
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
   const [isNavOpen, setIsNavOpen] = useState(false);
   
+  // AI 자동생성 상태
+  const [aiGenerationStatus, setAiGenerationStatus] = useState<'idle' | 'analyzing' | 'generating' | 'completed'>('idle');
+  const [generationProgress, setGenerationStatus] = useState({ current: 0, total: 10 });
+  const [masterPlan, setMasterPlan] = useState<any[]>([]);
+  const [aiPages, setAiPages] = useState<any[]>([]);
+
   // 호버 딜레이를 위한 타이머
   const navTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -201,6 +207,7 @@ export default function Home() {
     description: useRef<HTMLDivElement>(null),
     images: useRef<HTMLDivElement>(null),
     seller: useRef<HTMLDivElement>(null),
+    aiGen: useRef<HTMLDivElement>(null),
   };
 
   const scrollToTop = () => {
@@ -226,7 +233,7 @@ export default function Home() {
     navTimerRef.current = setTimeout(() => {
       setIsNavOpen(false);
       navTimerRef.current = null;
-    }, 150); // 반응성을 위해 닫기 대기 시간도 약간 단축
+    }, 150);
   };
 
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
@@ -275,7 +282,7 @@ export default function Home() {
   };
 
   const handleFetchDetail = async (itemNo: string) => {
-    setDetailLoading(true); setItemDetail(null); setActiveThumb(null); setValidImages([]); setDescImages([]); setIsNavOpen(false);
+    setDetailLoading(true); setItemDetail(null); setActiveThumb(null); setValidImages([]); setDescImages([]); setIsNavOpen(false); setAiPages([]); setAiGenerationStatus('idle');
     try {
       const response = await fetch(`/api/domeggook/view?itemNo=${itemNo}`);
       const data: DomeggookItemDetailResponse = await response.json();
@@ -291,6 +298,60 @@ export default function Home() {
         setItemDetail(detail);
       } else { alert('상세 정보를 찾을 수 없습니다.'); }
     } catch (error) { console.error('Fetch detail error:', error); alert('상세 정보를 가져오는데 실패했습니다.'); } finally { setDetailLoading(false); }
+  };
+
+  const handleGenerateFullDetail = async () => {
+    if (!itemDetail) return;
+    setAiGenerationStatus('analyzing');
+    setAiPages([]);
+    
+    try {
+      // Phase 1: Step 0 사전 분석
+      const enrichRes = await fetch('/api/ai/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          title: itemDetail.basis.title, 
+          category: itemDetail.category?.current?.name,
+          thumbDesc: activeThumb 
+        })
+      });
+      const enrichData = await enrichRes.json();
+      if (!enrichData.success) throw new Error(enrichData.error);
+      
+      setMasterPlan(enrichData.masterPlan);
+      setAiGenerationStatus('generating');
+      setGenerationStatus({ current: 0, total: enrichData.masterPlan.length });
+
+      // Phase 2: 페이지별 순차 생성 (병렬 처리 시 속도는 빠르나 품질 및 리소스 제한 고려하여 순차 처리)
+      const pages = [];
+      for (let i = 0; i < enrichData.masterPlan.length; i++) {
+        setGenerationStatus(prev => ({ ...prev, current: i + 1 }));
+        const pagePlan = enrichData.masterPlan[i];
+        
+        const genRes = await fetch('/api/ai/generate/gemini', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            pagePlan, 
+            productInfo: { title: itemDetail.basis.title, category: itemDetail.category?.current?.name }
+          })
+        });
+        const pageData = await genRes.json();
+        if (pageData.success) {
+          pages.push(pageData);
+          setAiPages([...pages]); // 실시간 업데이트
+        }
+      }
+      
+      setAiGenerationStatus('completed');
+      setTimeout(() => scrollToSection(sectionRefs.aiGen), 100);
+
+    } catch (error: any) {
+      console.error('AI Generation Error:', error);
+      alert('상세페이지 생성 중 오류가 발생했습니다: ' + error.message);
+      setAiGenerationStatus('idle');
+    }
   };
 
   const handleDownloadImage = async () => {
@@ -360,7 +421,7 @@ export default function Home() {
         <div className="fixed z-[9999] bg-black/50 flex items-center justify-center p-4 md:p-10 backdrop-blur-[2px] overlay-reset overflow-hidden">
           <div className="bg-white w-full max-w-6xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 relative">
             
-            {/* FAB - Ultra Fast Response & Accuracy */}
+            {/* FAB - Mouse Hover Accuracy Fix */}
             <div 
               className="absolute right-6 bottom-[140px] z-20 flex flex-col items-end pointer-events-none"
               onMouseLeave={handleNavMouseLeave}
@@ -377,6 +438,9 @@ export default function Home() {
                 </Button>
                 <Button variant="outline" className="bg-white/95 backdrop-blur-md shadow-lg rounded-full px-5 h-12 flex items-center gap-2 border-primary/20 text-primary font-bold hover:bg-primary hover:text-white transition-colors duration-75" onClick={() => scrollToSection(sectionRefs.images)}>
                   <ImageIcon size={18} /> 이미지 목록
+                </Button>
+                <Button variant="outline" className="bg-white/95 backdrop-blur-md shadow-lg rounded-full px-5 h-12 flex items-center gap-2 border-primary/20 text-primary font-bold hover:bg-primary hover:text-white transition-colors duration-75" onClick={() => scrollToSection(sectionRefs.aiGen)}>
+                  <Sparkles size={18} /> AI 상세 자동제작
                 </Button>
                 <Button variant="outline" className="bg-white/95 backdrop-blur-md shadow-lg rounded-full px-5 h-12 flex items-center gap-2 border-primary/20 text-primary font-bold hover:bg-primary hover:text-white transition-colors duration-75" onClick={() => scrollToSection(sectionRefs.seller)}>
                   <User size={18} /> 판매자 정보
@@ -437,8 +501,122 @@ export default function Home() {
                   </div>
                 </div>
               </div>
+              
               <div className="space-y-6" ref={sectionRefs.description}><h4 className="flex items-center gap-2 font-bold text-xl text-slate-800 border-b pb-4"><FileEdit className="h-6 w-6 text-indigo-500" /> 상품 상세 설명</h4><div className="bg-white p-8 rounded-3xl border shadow-inner min-h-[300px] overflow-x-hidden">{itemDetail.desc?.contents?.item ? <div className="prose max-w-full domeggook-desc" dangerouslySetInnerHTML={{ __html: itemDetail.desc.contents.item }} /> : <div className="flex flex-col items-center justify-center py-20 text-slate-300"><Info size={48} strokeWidth={1} /><p className="mt-4 font-medium">등록된 상세 설명이 없습니다.</p></div>}</div></div>
+              
+              {/* AI 상세페이지 자동제작 섹션 */}
+              <div className="space-y-6" ref={sectionRefs.aiGen}>
+                <div className="flex items-center justify-between border-b pb-4">
+                  <div className="space-y-1">
+                    <h4 className="flex items-center gap-2 font-bold text-2xl text-slate-800"><Sparkles className="h-7 w-7 text-amber-500" /> 10단계 AI 상세페이지 자동제작</h4>
+                    <p className="text-sm text-muted-foreground">시장을 분석하고 구매를 부르는 10페이지 분량의 시안을 생성합니다.</p>
+                  </div>
+                  <Button onClick={handleGenerateFullDetail} disabled={aiGenerationStatus !== 'idle' && aiGenerationStatus !== 'completed'} className="bg-gradient-to-r from-indigo-600 to-primary hover:from-indigo-700 hover:to-primary/90 text-white border-none shadow-xl font-bold h-12 px-8 rounded-xl scale-105 active:scale-95 transition-all">
+                    {aiGenerationStatus === 'analyzing' || aiGenerationStatus === 'generating' ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Wand2 className="mr-2 h-5 w-5" />}
+                    {aiGenerationStatus === 'completed' ? '상세페이지 다시 제작' : '10페이지 일괄 제작 시작'}
+                  </Button>
+                </div>
+
+                {aiGenerationStatus === 'analyzing' && (
+                  <div className="py-24 flex flex-col items-center justify-center bg-white rounded-[2rem] border-2 border-dashed border-indigo-100 shadow-inner">
+                    <div className="relative mb-8">
+                      <div className="h-24 w-24 rounded-full border-4 border-indigo-50 border-t-indigo-500 animate-spin" />
+                      <Search className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-10 w-10 text-indigo-400" />
+                    </div>
+                    <h5 className="text-xl font-bold text-slate-800">STEP 0. 초기 분석 및 데이터 학습 중...</h5>
+                    <p className="text-slate-500 mt-3 text-center max-w-md leading-relaxed">상품의 특징과 리뷰 데이터를 분석하여<br/>최적의 판매 전략(AIDA)을 수립하고 있습니다.</p>
+                  </div>
+                )}
+
+                {aiGenerationStatus === 'generating' && (
+                  <div className="space-y-8">
+                    <div className="bg-indigo-50 p-6 rounded-2xl flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="h-12 w-12 bg-indigo-500 rounded-xl flex items-center justify-center text-white font-bold text-lg">{generationProgress.current}</div>
+                        <div>
+                          <p className="font-bold text-indigo-900">총 10페이지 중 {generationProgress.current}번째 제작 중</p>
+                          <p className="text-xs text-indigo-600 font-medium">나노바나나 엔진이 고화질 시안과 원고를 결합하고 있습니다.</p>
+                        </div>
+                      </div>
+                      <div className="w-48 bg-white/50 h-3 rounded-full overflow-hidden border border-indigo-100">
+                        <div className="bg-indigo-500 h-full transition-all duration-500" style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4 opacity-50 grayscale pointer-events-none">
+                      {[...Array(10)].map((_, i) => (
+                        <div key={i} className={cn("aspect-[3/4] bg-slate-200 rounded-xl animate-pulse", i < generationProgress.current && "bg-indigo-100 grayscale-0")} />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {aiPages.length > 0 && (
+                  <div className="space-y-10">
+                    {/* 마스터 플랜 대시보드 */}
+                    {masterPlan.length > 0 && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
+                        {masterPlan.map((p, i) => (
+                          <div key={i} className={cn(
+                            "p-3 rounded-xl border text-left transition-all",
+                            aiPages.find(ap => ap.page === p.page) ? "bg-white border-green-200 shadow-sm" : "bg-slate-50 border-slate-100 opacity-50"
+                          )}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Page {p.page}</span>
+                              {aiPages.find(ap => ap.page === p.page) && <CheckCircle2 size={12} className="text-green-500" />}
+                            </div>
+                            <p className="text-xs font-bold text-slate-700 truncate">{p.theme}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 완성된 페이지 리스트 */}
+                    <div className="grid grid-cols-1 gap-12">
+                      {aiPages.map((page) => (
+                        <div key={page.page} className="group flex flex-col lg:flex-row gap-8 bg-white p-2 rounded-[2.5rem] border shadow-xl hover:shadow-2xl transition-all duration-500 overflow-hidden">
+                          <div className="lg:w-1/2 aspect-square bg-slate-100 rounded-[2rem] overflow-hidden relative">
+                            {page.imageUrl ? (
+                              <img src={page.imageUrl} alt={`Page ${page.page}`} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
+                                <ImageIcon size={64} strokeWidth={1} />
+                                <p className="mt-4 font-medium">이미지 생성 중 오류</p>
+                              </div>
+                            )}
+                            <div className="absolute top-6 left-6 bg-black/70 backdrop-blur-md text-white px-5 py-2 rounded-2xl text-sm font-black shadow-2xl">PAGE {String(page.page).padStart(2, '0')}</div>
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-all flex items-center justify-center opacity-0 group-hover:opacity-100">
+                              <Button variant="secondary" size="icon" className="h-16 w-16 rounded-full shadow-2xl scale-50 group-hover:scale-100 transition-all" onClick={() => setZoomedImage(page.imageUrl)}>
+                                <ZoomIn size={32} />
+                              </Button>
+                            </div>
+                          </div>
+                          <div className="lg:w-1/2 p-8 flex flex-col justify-center space-y-6">
+                            <div className="space-y-3">
+                              <div className="flex items-center gap-2 text-indigo-500 font-bold text-sm uppercase tracking-widest">
+                                <LayoutTemplate size={16} /> {masterPlan[page.page - 1]?.theme}
+                              </div>
+                              <h5 className="text-2xl font-black text-slate-900 leading-tight">"{masterPlan[page.page - 1]?.keyword}"</h5>
+                            </div>
+                            <div className="bg-slate-50 p-6 rounded-3xl border border-slate-100 relative">
+                              <FileText size={20} className="absolute -top-3 -left-3 text-slate-300 bg-white rounded-full p-1 border" />
+                              <div className="prose prose-slate prose-sm max-w-full text-slate-600 font-medium leading-relaxed whitespace-pre-wrap">
+                                {page.manuscript}
+                              </div>
+                            </div>
+                            <div className="flex gap-3 pt-4">
+                              <Button variant="outline" className="flex-1 h-12 rounded-xl font-bold border-slate-200 hover:bg-slate-50" onClick={() => setZoomedImage(page.imageUrl)}>시안 크게보기</Button>
+                              <Button className="flex-1 h-12 rounded-xl font-bold bg-slate-900 hover:bg-black text-white shadow-lg" onClick={() => { const link = document.createElement('a'); link.href = page.imageUrl; link.download = `page-${page.page}.png`; link.click(); }}>이미지 다운로드</Button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-6" ref={sectionRefs.images}><h4 className="flex items-center gap-2 font-bold text-xl text-slate-800 border-b pb-4"><ImageIcon className="h-6 w-6 text-pink-500" /> 본문 추출 이미지 ({descImages.length}장)</h4><p className="text-sm text-muted-foreground -mt-2">본문에 포함된 이미지를 따로 모았습니다. 클릭하면 크게 볼 수 있습니다.</p>{descImages.length > 0 ? (<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">{descImages.map((url, i) => (<div key={i} className="group relative aspect-square bg-white rounded-xl border border-slate-100 overflow-hidden cursor-zoom-in hover:shadow-lg transition-all duration-200" onClick={() => setZoomedImage(url)}><img src={url} alt={`desc-img-${i}`} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" /><div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 flex items-center justify-center transition-colors"><ZoomIn className="text-white opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all" /></div></div>))}</div>) : <div className="py-10 text-center text-slate-400 bg-white rounded-2xl border border-dashed">상세 설명에서 이미지를 찾을 수 없습니다.</div>}</div>
+              
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch" ref={sectionRefs.seller}><div className="flex flex-col space-y-4 h-full"><h4 className="flex items-center gap-2 font-bold text-slate-800"><Tag className="h-5 w-5 text-purple-500" /> 카테고리 및 키워드</h4><div className="bg-white p-6 rounded-2xl border shadow-sm flex-1 space-y-6"><div><p className="text-[10px] text-muted-foreground uppercase font-bold mb-3 tracking-widest">분류 경로</p><div className="flex flex-wrap items-center gap-x-2 gap-y-3 text-sm font-semibold">{itemDetail.category?.parents?.elem?.map((c, i) => (<React.Fragment key={i}><span className="text-slate-900 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-100">{c.name}</span><ChevronRight size={14} className="text-slate-300" /></React.Fragment>))}<span className="text-primary bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/10">{itemDetail.category?.current?.name}</span></div></div><div><p className="text-[10px] text-muted-foreground uppercase font-bold mb-3 tracking-widest">검색 키워드</p><div className="flex flex-wrap gap-2">{itemDetail.basis.keywords?.kw?.map((k, i) => (<span key={i} className="px-3 py-2 bg-slate-100 text-slate-600 rounded-xl text-[11px] font-bold border border-slate-200/50 hover:bg-primary/10 hover:text-primary hover:border-primary/20 transition-all cursor-default">#{k}</span>))}</div></div></div></div>
                 <div className="flex flex-col space-y-4 h-full mt-0 md:mt-0"><h4 className="flex items-center gap-2 font-bold text-slate-800"><User className="h-5 w-5 text-teal-500" /> 판매자 및 기업 정보</h4><div className="bg-white p-6 rounded-2xl border shadow-sm flex-1 flex flex-col"><div className="flex items-center gap-4 mb-6 pb-6 border-b border-slate-50"><div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center text-primary font-bold text-xl">{itemDetail.seller?.nick?.substring(0, 1) || 'S'}</div><div><p className="font-bold text-lg leading-tight">{itemDetail.seller?.nick} <span className="text-slate-400 font-normal text-xs ml-1">({itemDetail.seller?.id})</span></p><p className="text-[11px] text-muted-foreground mt-1">사업자구분: {itemDetail.seller?.type} | 만족도: {itemDetail.seller?.score?.avg}</p></div></div><div className="space-y-1 flex-1"><DetailRow label="상호명" value={itemDetail.seller?.company?.name} /><DetailRow label="대표자" value={itemDetail.seller?.company?.boss} /><DetailRow label="사업자번호" value={itemDetail.seller?.company?.cno} /><DetailRow label="전화번호" value={itemDetail.seller?.company?.phone} /><DetailRow label="사업장주소" value={itemDetail.seller?.company?.addr} /></div></div></div>
               </div>
