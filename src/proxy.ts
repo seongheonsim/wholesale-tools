@@ -1,8 +1,20 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyToken } from './lib/jwt';
+import { jwtVerify } from 'jose';
 
-export async function middleware(request: NextRequest) {
+const secretKey = process.env.JWT_SECRET_KEY || 'wholesale-tools-super-secret-key-12345';
+const encodedKey = new TextEncoder().encode(secretKey);
+
+async function verifyToken(token: string) {
+  try {
+    const { payload } = await jwtVerify(token, encodedKey);
+    return payload;
+  } catch (error) {
+    return null;
+  }
+}
+
+export default async function proxy(request: NextRequest) {
   const token = request.cookies.get('auth_token')?.value;
   const isLoginPage = request.nextUrl.pathname === '/login';
 
@@ -19,7 +31,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url));
   }
 
-  // API 라우트나 정적 파일 등은 검사 제외
   const isProtectedRoute = 
     !isLoginPage && 
     !request.nextUrl.pathname.startsWith('/api') && 
