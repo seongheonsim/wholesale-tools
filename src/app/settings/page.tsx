@@ -1,19 +1,19 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Save, ChevronLeft, Loader2, LogOut } from 'lucide-react';
+import { Save, Loader2, Eye, EyeOff } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import styles from './page.module.css';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export default function SettingsPage() {
   const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [dbConfigured, setDbConfigured] = useState(true);
-  const router = useRouter();
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
@@ -21,23 +21,8 @@ export default function SettingsPage() {
       setLoading(false);
       return;
     }
-    checkUser();
-  }, []);
-
-  const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) {
-      router.push('/login');
-      return;
-    }
     fetchApiKey();
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/');
-    router.refresh();
-  };
+  }, []);
 
   const fetchApiKey = async () => {
     setLoading(true);
@@ -86,79 +71,82 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className={styles.container}>
-      <div className={styles.card}>
-        <h1 className={styles.title}>플랫폼 설정</h1>
-        
+    <div className="max-w-2xl mx-auto space-y-6 pt-4">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold tracking-tight">플랫폼 설정</h1>
+        <p className="text-muted-foreground">도매꾹 Open API 연동 및 관리자 설정을 관리합니다.</p>
+      </div>
+      
+      <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
         {!dbConfigured ? (
-          <div style={{ padding: '1rem', background: '#fff3cd', color: '#856404', borderRadius: '8px', marginBottom: '2rem', textAlign: 'left' }}>
-            <p><strong>⚠️ DB가 연결되지 않았습니다.</strong></p>
-            <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
+          <div className="p-4 bg-amber-50 border-b border-amber-100 text-amber-800">
+            <p className="font-semibold flex items-center gap-2">
+              <span className="text-xl">⚠️</span> DB가 연결되지 않았습니다.
+            </p>
+            <p className="text-sm mt-1">
               도매꾹 API 기능을 사용하려면 Supabase 환경변수 연결 및 설정을 완료해 주세요.
             </p>
           </div>
         ) : (
-          <p className={styles.description}>
-            도매꾹 Open API를 사용하기 위해 발급받은 API Key (aid)를 입력해 주세요.<br/>
-            저장된 키는 안전하게 데이터베이스에 보관됩니다.
-          </p>
+          <div className="p-6 border-b bg-slate-50/50">
+            <p className="text-sm text-slate-600 leading-relaxed">
+              도매꾹 Open API를 사용하기 위해 발급받은 **API Key (aid)**를 입력해 주세요.
+              저장된 키는 데이터베이스에 암호화되어 안전하게 보관됩니다.
+            </p>
+          </div>
         )}
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>
-            <Loader2 className="animate-spin" size={40} color="#007bff" />
-            <p style={{ marginTop: '1rem' }}>불러오는 중...</p>
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <Loader2 className="animate-spin h-10 w-10 text-primary" />
+            <p className="text-slate-500 font-medium">설정 정보를 불러오는 중...</p>
           </div>
         ) : dbConfigured ? (
-          <form onSubmit={handleSave}>
-            <div className={styles.formGroup}>
-              <label className={styles.label} htmlFor="apiKey">
+          <form onSubmit={handleSave} className="p-8 space-y-6">
+            <div className="space-y-3">
+              <label className="text-sm font-bold text-slate-700" htmlFor="apiKey">
                 도매꾹 API Key (aid)
               </label>
-              <input
-                id="apiKey"
-                type="password"
-                className={styles.input}
-                placeholder="도매꾹에서 발급받은 aid를 입력하세요"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                required
-              />
+              <div className="relative group">
+                <Input
+                  id="apiKey"
+                  type={showApiKey ? "text" : "password"}
+                  className="h-12 pr-12 text-base border-slate-200 focus:border-primary focus:ring-primary transition-all"
+                  placeholder="도매꾹에서 발급받은 aid를 입력하세요"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors p-1"
+                  title={showApiKey ? "키 숨기기" : "키 보기"}
+                >
+                  {showApiKey ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
             </div>
 
-            <button type="submit" className={styles.button} disabled={saving}>
-              {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
-              저장하기
-            </button>
-
-            {message && <div className={styles.successMessage}>{message}</div>}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-100 mt-8">
+              <div className="min-h-[24px]">
+                {message && (
+                  <p className="text-sm font-semibold text-green-600 animate-in fade-in slide-in-from-left-2">
+                    {message}
+                  </p>
+                )}
+              </div>
+              <Button 
+                type="submit" 
+                className="h-12 px-8 text-base font-bold shadow-lg shadow-primary/20 transition-all hover:scale-[1.02] active:scale-[0.98]" 
+                disabled={saving}
+              >
+                {saving ? <Loader2 className="animate-spin mr-2 h-5 w-5" /> : <Save className="mr-2 h-5 w-5" />}
+                저장하기
+              </Button>
+            </div>
           </form>
         ) : null}
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem' }}>
-          <Link href="/" className={styles.backLink} style={{ marginTop: 0 }}>
-            <ChevronLeft size={16} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
-            검색 페이지로 돌아가기
-          </Link>
-          {dbConfigured && (
-            <button 
-              onClick={handleLogout}
-              style={{ 
-                background: 'none', 
-                border: 'none', 
-                color: '#dc3545', 
-                cursor: 'pointer',
-                fontSize: '0.9rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
-              <LogOut size={16} />
-              로그아웃
-            </button>
-          )}
-        </div>
       </div>
     </div>
   );

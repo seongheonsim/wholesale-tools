@@ -2,9 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { LogIn, Loader2 } from 'lucide-react';
-import { supabase } from '@/lib/supabase';
 import styles from './page.module.css';
 
 export default function LoginPage() {
@@ -20,18 +18,23 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
       });
+      
+      const data = await response.json();
 
-      if (error) throw error;
+      if (!response.ok || data.error) {
+        throw new Error(data.error || '로그인 실패');
+      }
 
-      router.push('/settings');
+      router.push('/');
       router.refresh();
     } catch (err: any) {
       console.error('Login error:', err);
-      setError('로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.');
+      setError(err.message || '로그인에 실패했습니다. 이메일과 비밀번호를 확인해 주세요.');
     } finally {
       setLoading(false);
     }
@@ -77,10 +80,6 @@ export default function LoginPage() {
             로그인하기
           </button>
         </form>
-
-        <Link href="/" className={styles.homeLink}>
-          홈으로 돌아가기
-        </Link>
       </div>
     </div>
   );
